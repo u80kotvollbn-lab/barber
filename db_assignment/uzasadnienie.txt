@@ -1,0 +1,123 @@
+================================================================
+UZASADNIENIE PROJEKTU BAZY DANYCH "salon_rezerwacje"
+Autor: Volodymyr Kot
+Data: 2026-05-10
+================================================================
+
+1. OPIS DOMENY
+----------------------------------------------------------------
+Baza danych obsługuje system rezerwacji wizyt w salonie barberskim.
+Pozwala on klientom rezerwować termin u wybranego pracownika na
+konkretną usługę, a po zakończeniu wizyty wystawić opinię.
+
+2. STRUKTURA TABEL
+----------------------------------------------------------------
+Zaprojektowano 5 tabel, które razem opisują cały proces biznesowy:
+
+  - workers       – pracownicy salonu (barberzy, recepcjoniści, manager)
+  - users         – zarejestrowani klienci (konta logowania)
+  - services      – katalog oferowanych usług/zabiegów (cennik)
+  - appointments  – konkretne wizyty (rdzeń bazy)
+  - reviews       – opinie wystawiane do wizyt
+
+3. UZASADNIENIE RELACJI
+----------------------------------------------------------------
+
+3.1. users 1—N appointments
+  Jeden klient może mieć wiele wizyt, ale każda wizyta dotyczy
+  dokładnie jednego klienta. Klucz obcy `appointments.user_id`
+  z opcją ON DELETE SET NULL pozwala usunąć konto klienta bez
+  utraty historii wizyt (anonimizacja zgodnie z RODO).
+
+3.2. workers 1—N appointments
+  Jeden pracownik obsługuje wiele wizyt. Klucz obcy
+  `appointments.worker_id` z ON DELETE SET NULL chroni dane
+  historyczne — odejście pracownika nie kasuje archiwalnych wizyt.
+
+3.3. services 1—N appointments
+  Każda wizyta dotyczy dokładnie jednej usługi z cennika.
+  Tu zastosowano ON DELETE RESTRICT: nie można usunąć usługi,
+  jeśli istnieją powiązane z nią wizyty. Chroni to integralność
+  danych historycznych i raportów finansowych.
+
+3.4. appointments 1—1 reviews
+  Jedna wizyta może mieć co najwyżej jedną opinię — wymuszone
+  przez UNIQUE na kolumnie `reviews.appointment_id`. Usunięcie
+  wizyty (CASCADE) usuwa też powiązaną opinię, bo opinia bez
+  wizyty traci sens.
+
+W ten sposób tabela `appointments` jest typową tabelą łączącą
+trzy słowniki (users, workers, services) i stanowi rdzeń modelu.
+
+4. UZASADNIENIE OGRANICZEŃ (CONSTRAINTS)
+----------------------------------------------------------------
+
+4.1. PRIMARY KEY (AUTO_INCREMENT na każdej tabeli)
+  Zapewnia unikalną, niezależną od danych biznesowych identyfikację
+  rekordów. Przyspiesza JOIN-y i indeksuje główny klucz.
+
+4.2. NOT NULL na kluczowych polach
+  Pola takie jak `full_name`, `email`, `password_hash`, `visit_date`,
+  `service_id` nie mogą być puste — bez nich rekord nie miałby
+  sensu biznesowego (np. wizyta bez daty).
+
+4.3. UNIQUE
+  - `workers.email`, `users.email`, `users.username` — zapobiega
+    duplikatom kont i pozwala używać emaila/loginu do logowania.
+  - `services.name` — w cenniku każda usługa ma unikalną nazwę.
+  - `reviews.appointment_id` — wymusza relację 1—1 między wizytą
+    a opinią (jedna opinia na wizytę).
+
+4.4. CHECK
+  - `chk_users_email`, `chk_workers_email` — prosty walidator
+    formatu email (zawiera @ i kropkę). Działa jako pierwsza linia
+    obrony nawet jeśli walidacja w PHP zostanie pominięta.
+  - `chk_users_username` — login musi mieć min. 3 znaki.
+  - `chk_services_duration` — czas trwania zabiegu w sensownym
+    przedziale 5–480 minut (od 5 min do 8h).
+  - `chk_services_price` — cena nie może być ujemna.
+  - `chk_reviews_rating` — ocena tylko w skali 1–5.
+  - `chk_appointments_review`, `chk_workers_active` — flagi
+    boolean ograniczone do 0/1.
+
+4.5. FOREIGN KEY z odpowiednim ON DELETE / ON UPDATE
+  - SET NULL dla user_id i worker_id → ochrona historii.
+  - RESTRICT dla service_id → ochrona spójności cennika.
+  - CASCADE dla appointment_id w reviews → opinia bez wizyty
+    nie istnieje.
+  - ON UPDATE CASCADE wszędzie → bezpieczna zmiana ID
+    (np. przy migracji).
+
+4.6. ENUM
+  Zastosowane dla `workers.role` i `appointments.status`. Ogranicza
+  zbiór możliwych wartości po stronie bazy, eliminując literówki
+  i błędne stany w kodzie aplikacji.
+
+4.7. DEFAULT i ON UPDATE CURRENT_TIMESTAMP
+  Pola `created_at` / `updated_at` są wypełniane automatycznie —
+  upraszcza to logikę aplikacji i gwarantuje audytowalność danych.
+
+4.8. INDEKSY
+  - idx_workers_active_role     – szybkie filtrowanie aktywnych barberów,
+  - idx_appointments_visit_date – szybkie zapytania o terminarz,
+  - idx_appointments_status     – filtrowanie po statusie wizyty.
+  Indeksy przyspieszają najczęstsze zapytania (lista wizyt na dziś,
+  aktywni pracownicy, raporty po statusie).
+
+5. WPŁYW OGRANICZEŃ NA DZIAŁANIE BAZY
+----------------------------------------------------------------
+  - Spójność: niemożliwe jest dodanie wizyty bez istniejącej
+    usługi czy oceny spoza zakresu 1–5.
+  - Bezpieczeństwo: walidacja po stronie bazy działa nawet gdy
+    aplikacja PHP zostanie obejdzie.
+  - Wydajność: indeksy + InnoDB pozwalają szybko wykonywać JOIN-y
+    i raporty.
+  - Utrzymanie historii: SET NULL i RESTRICT chronią archiwalne
+    dane przed przypadkowym usunięciem.
+  - Reużywalność: skrypt SQL można uruchomić wielokrotnie — DROP
+    TABLE IF EXISTS w odpowiedniej kolejności gwarantuje czysty
+    stan przed każdym wgraniem.
+
+================================================================
+KONIEC UZASADNIENIA
+================================================================
