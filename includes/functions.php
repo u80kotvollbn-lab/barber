@@ -20,11 +20,12 @@ function formatujDateNaPolski($datetime) {
  * @return array
  */
 function pobierzWszystkieOpinie($pdo) {
-    $sql = "SELECT r.rating, r.comment, a.client_name, a.visit_date 
-            FROM reviews r 
-            JOIN appointments a ON r.appointment_id = a.id 
+    $sql = "SELECT r.rating, r.comment, u.full_name AS client_name, a.visit_date
+            FROM reviews r
+            JOIN appointments a ON r.appointment_id = a.id
+            JOIN users u ON a.user_id = u.id
             ORDER BY r.created_at DESC";
-            
+
     $stmt = $pdo->query($sql);
     // Zwraca tablicę (Array) wszystkich wierszy - funkcja wbudowana fetchAll
     return $stmt->fetchAll();
@@ -38,17 +39,19 @@ function pobierzWszystkieOpinie($pdo) {
  */
 function sprawdzMozliwoscOpinii($pdo, $email) {
     // Zabezpieczenie przed SQL Injection przez bindowanie (funkcja wbudowana PDO)
-    $sql = "SELECT id, visit_date, service_type 
-            FROM appointments 
-            WHERE client_email = :email 
-              AND can_review = 1 
-              AND id NOT IN (SELECT appointment_id FROM reviews) 
-            ORDER BY visit_date ASC LIMIT 1";
-            
+    $sql = "SELECT a.id, a.visit_date, s.name AS service_type
+            FROM appointments a
+            JOIN users u ON a.user_id = u.id
+            JOIN services s ON a.service_id = s.id
+            WHERE u.email = :email
+              AND a.can_review = 1
+              AND a.id NOT IN (SELECT appointment_id FROM reviews)
+            ORDER BY a.visit_date ASC LIMIT 1";
+
     $stmt = $pdo->prepare($sql);
     $stmt->execute(['email' => $email]);
     $wizyta = $stmt->fetch();
-    
+
     return $wizyta ? $wizyta : false;
 }
 
@@ -59,16 +62,29 @@ function sprawdzMozliwoscOpinii($pdo, $email) {
  * @return bool
  */
 function zapiszRezerwacje($pdo, $dane) {
-    $sql = "INSERT INTO appointments (worker_id, client_name, client_email, service_type, visit_date) 
-            VALUES (:worker_id, :name, :email, :service, :date)";
-            
+    $userStmt = $pdo->prepare("SELECT id FROM users WHERE email = :email LIMIT 1");
+    $userStmt->execute(['email' => $dane['email']]);
+    $userId = $userStmt->fetchColumn();
+    if (!$userId) {
+        return false;
+    }
+
+    $serviceStmt = $pdo->prepare("SELECT id FROM services WHERE name = :name LIMIT 1");
+    $serviceStmt->execute(['name' => $dane['service']]);
+    $serviceId = $serviceStmt->fetchColumn();
+    if (!$serviceId) {
+        return false;
+    }
+
+    $sql = "INSERT INTO appointments (user_id, worker_id, service_id, visit_date)
+            VALUES (:user_id, :worker_id, :service_id, :date)";
+
     $stmt = $pdo->prepare($sql);
     return $stmt->execute([
-        'worker_id' => $dane['worker_id'] ?? null,
-        'name'    => $dane['name'],
-        'email'   => $dane['email'],
-        'service' => $dane['service'],
-        'date'    => $dane['date']
+        'user_id'    => $userId,
+        'worker_id'  => $dane['worker_id'] ?? null,
+        'service_id' => $serviceId,
+        'date'       => $dane['date']
     ]);
 }
 
@@ -98,10 +114,12 @@ function znajdzUzytkownikaPoEmail($pdo, $email) {
 }
 
 function pobierzRezerwacjePoEmail($pdo, $email) {
-    $stmt = $pdo->prepare("SELECT a.id, a.client_name, a.client_email, a.service_type, a.visit_date, w.full_name AS worker_name, w.role AS worker_role
+    $stmt = $pdo->prepare("SELECT a.id, u.full_name AS client_name, u.email AS client_email, s.name AS service_type, a.visit_date, w.full_name AS worker_name, w.role AS worker_role
         FROM appointments a
+        JOIN users u ON a.user_id = u.id
+        JOIN services s ON a.service_id = s.id
         LEFT JOIN workers w ON a.worker_id = w.id
-        WHERE a.client_email = :email
+        WHERE u.email = :email
         ORDER BY a.visit_date DESC");
     $stmt->execute(['email' => $email]);
     return $stmt->fetchAll();
@@ -119,12 +137,18 @@ function pobierzAktywnychPracownikow($pdo, $role = null) {
 }
 
 function anulujRezerwacje($pdo, $appointmentId, $email) {
-    $stmt = $pdo->prepare("SELECT id FROM appointments WHERE id = :id AND client_email = :email AND visit_date > NOW() LIMIT 1");
+    $stmt = $pdo->prepare("SELECT a.id
+        FROM appointments a
+        JOIN users u ON a.user_id = u.id
+        WHERE a.id = :id AND u.email = :email AND a.visit_date > NOW()
+        LIMIT 1");
     $stmt->execute(['id' => $appointmentId, 'email' => $email]);
     $row = $stmt->fetch();
     if (!$row) return false;
 
-    $del = $pdo->prepare("DELETE FROM appointments WHERE id = :id AND client_email = :email");
+    $del = $pdo->prepare("DELETE a FROM appointments a
+        JOIN users u ON a.user_id = u.id
+        WHERE a.id = :id AND u.email = :email");
     return $del->execute(['id' => $appointmentId, 'email' => $email]);
 }
 ?>
