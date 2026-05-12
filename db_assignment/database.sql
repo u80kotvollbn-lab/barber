@@ -122,6 +122,27 @@ CREATE TABLE reviews (
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
+
+-- Włączenie harmonogramu zdarzeń (wymagane dla Eventów)
+SET GLOBAL event_scheduler = ON;
+
+-- Tworzenie zdarzenia (Event) MySQL "na 6" (7 dni po wizycie)
+-- Codziennie sprawdza i uaktywnia możliwość opinii dla wizyt, które odbyły się minimum 7 dni temu
+DELIMITER //
+
+CREATE EVENT IF NOT EXISTS update_review_status
+ON SCHEDULE EVERY 1 DAY
+STARTS CURRENT_TIMESTAMP
+DO
+BEGIN
+    UPDATE appointments
+    SET can_review = 1
+    WHERE visit_date <= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      AND can_review = 0;
+END //
+
+DELIMITER ;
+
 -- =====================================================================
 -- 8. PRZYKŁADOWE DANE TESTOWE
 -- =====================================================================
