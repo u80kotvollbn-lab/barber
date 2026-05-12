@@ -134,7 +134,7 @@ ORDER BY a.visit_date ASC;
 
 
 -- ---------------------------------------------------------------------
--- ZAPYTANIE 6 (BONUS) – Klienci, którzy nie wystawili jeszcze opinii
+-- ZAPYTANIE 6 – Klienci, którzy nie wystawili jeszcze opinii
 -- ---------------------------------------------------------------------
 -- Co zwraca:
 --   Listę zakończonych wizyt, dla których nie ma jeszcze opinii,
