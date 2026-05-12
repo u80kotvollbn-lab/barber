@@ -108,7 +108,7 @@ CREATE TABLE appointments (
 
 -- ----------------------------------------------------------------------
 -- 7. Tabela: reviews (opinie po wizytach)
---    Jedna opinia na jedną wizytę – stąd UNIQUE na appointment_id.
+--    Jedna opinia na jedną wizytę.
 -- ----------------------------------------------------------------------
 CREATE TABLE reviews (
     id              INT AUTO_INCREMENT PRIMARY KEY,
@@ -126,7 +126,6 @@ CREATE TABLE reviews (
 -- Włączenie harmonogramu zdarzeń (wymagane dla Eventów)
 SET GLOBAL event_scheduler = ON;
 
--- Tworzenie zdarzenia (Event) MySQL "na 6" (7 dni po wizycie)
 -- Codziennie sprawdza i uaktywnia możliwość opinii dla wizyt, które odbyły się minimum 7 dni temu
 DELIMITER //
 
